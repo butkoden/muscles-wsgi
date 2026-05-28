@@ -1,145 +1,52 @@
-# README: Muscular Framework #
+# Muscles WSGI
 
-```bash
+`muscles-wsgi` is the WSGI runtime for Muscles. It provides page routing,
+request/response handling, templates, static files, REST controllers and Swagger
+UI on top of the shared `muscles` core.
 
-pybabel extract --mapping-file=/apps/app/babelrc --keywords=_ --keywords=_l --keywords=t --keywords=locale --output-file=/apps/gitmodules/muscles/locales/message.pot /apps/gitmodules/muscles/src
+## Runtime
 
-pybabel init --domain=message --input-file=/apps/gitmodules/muscles/locales/message.pot --output-dir=/apps/gitmodules/muscles/locales --locale=en
-
-pybabel update --domain=message --input-file=/apps/gitmodules/muscles/locales/message.pot --output-dir=/apps/gitmodules/muscles/locales --locale=en
-
-pybabel compile --domain=message --directory=/apps/gitmodules/muscles/locales
-
-```
-
-### Plans ###
-
-#### Completed ####
-- cli
-- http with wsgi
-- http with server
-- request
-- response
-- redirect
-- header
-- test for wsgi
-- test for http
-- test for cli
-- test for redirect
-- html template
-
-
-#### Must ####
-
-- route with param and alias (main.index)
-- test for abort
-- configuration
-- auto restart
-- documentation
-
-
-### Routers ###
+An app binds `Context` to `WsgiStrategy`:
 
 ```python
-from muscles.http import routes, Response
-
-def http_main(request):
-    body = '<html><head></head><body>'
-    body += f'#HalloMuscularWorld'
-    body += '</body></html>'
-    return body
+from muscles import ApplicationMeta, Configurator, Context
+from muscles.wsgi import WsgiStrategy
 
 
-@routes.init('/init', method='GET', content_type='text/html')
-def main_test1(request):
-    body = '<html><head></head><body>'
-    body += f'#init GET'
-    body += '</body></html>'
-    return body
+class App(metaclass=ApplicationMeta):
+    config = Configurator(obj={"main": {"HOST": "0.0.0.0", "PORT": "8080"}})
+    context = Context(WsgiStrategy, {})
 
-
-@routes.init('/init', method='PUT', content_type='application/json')
-def main_test1(request):
-    return [{"init": "PUT"}]
-
-
-@routes.init('/init', method='LINK', redirect='http://localhost:8080/test')
-def main_test1(request):
-    return [{"init": "PUT"}]
-
-
-@routes.init('/init', method='DELETE', redirect=(308, '/test'))
-def main_test1(request):
-    return [{"init": "PUT"}]
-
-
-@routes.init('/init', method='GET', content_type='application/json')
-def main_test1(request):
-    return {"init": "GET"}
-
-
-@routes.init('/init', method='POST')
-def main_test1(request):
-    body = '<html><head></head><body>'
-    body += f'#init POST'
-    body += '</body></html>'
-    return body
-
-
-def http_main(request):
-    body = '<html><head></head><body>'
-    body += f'#HalloMuscularWorld'
-    body += '</body></html>'
-    # await asyncio.sleep(5)
-    # time.sleep(5)
-    return body
-
-
-def http_main1(request):
-    body = '<html><head></head><body>'
-    body += f'#HalloMuscularWorld 111'
-    body += '</body></html>'
-    return Response(200, body=body)
-
-
-def http_main2(request):
-    body = '<html><head></head><body>'
-    body += f'#HalloMuscularWorld 111'
-    body += '</body></html>'
-    headers = [('Star', 1)]
-    return (body, 200, headers)
-
-
-def http_main3(request):
-    body = '<html><head></head><body>'
-    body += f'#HalloMuscularWorld 111'
-    body += '</body></html>'
-    headers = [('Star', 1)]
-    return (body, 404, headers)
-
-
-routes.add('/', http_main, method='GET')
-routes.add('/test', http_main1, method='*')
-routes.add('/test2', http_main2, method='*')
-routes.add('/test3', http_main3, method='*')
-
+    def run(self, *args):
+        return self.context.execute(*args, shutup=True)
 ```
-### How do I get set up? ###
 
-* Summary of set up
-* Configuration
-* Dependencies
-* Database configuration
-* How to run tests
-* Deployment instructions
+`WsgiStrategy` now accepts explicit `host` and `port` keyword arguments and uses
+standard WSGI environment keys such as `PATH_INFO`, `QUERY_STRING` and
+`wsgi.url_scheme`.
 
-### Contribution guidelines ###
+## REST API And Swagger
 
-* Writing tests
-* Code review
-* Other guidelines
+`RestApi` registers controllers and actions into the shared route structure.
+Swagger is generated from those controller schemas, request bodies, parameters
+and response bodies.
 
-### Who do I talk to? ###
+The generated OpenAPI paths include the mounted API prefix. If a controller
+action is registered as `/bookings` under prefix `/api/v1`, the schema exposes
+`/api/v1/bookings`.
 
-* Repo owner or admin
-* Other community or team contact
+More detail: [docs/openapi-and-routing.md](docs/openapi-and-routing.md).
+
+## Request Handling
+
+The request parser supports standard WSGI input and does not require optional
+system libraries to import. Multipart parsing uses the Python standard library;
+`python-magic` is treated as optional.
+
+## Development
+
+Run tests with sibling packages on `PYTHONPATH` when working from source:
+
+```bash
+PYTHONPATH=../muscles/src:src python -m pytest -q
+```

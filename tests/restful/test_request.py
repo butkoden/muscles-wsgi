@@ -1,7 +1,7 @@
 import io
 from muscles import JsonResponseBody
-from ...src.muscles.wsgi.wsgi import WsgiStrategy, Request
-from ...src.muscles.wsgi.restful import RestApi
+from muscles.wsgi.wsgi import WsgiStrategy, Request
+from muscles.wsgi.restful import RestApi
 from muscles import Context
 from muscles import ApplicationMeta
 from muscles import Configurator

@@ -21,8 +21,8 @@ class WsgiStrategy(BaseStrategy):
         :param kwargs:
         :return:
         """
-        host = kwargs['host'] if hasattr(kwargs, 'host') else 'localhost'
-        port = kwargs['port'] if hasattr(kwargs, 'port') else 8080
+        host = kwargs.get('host', 'localhost')
+        port = kwargs.get('port', 8080)
 
         server = WsgiServer(host, port, error_handler=error_handler)
         transport = kwargs.get('transport', WsgiTransport)

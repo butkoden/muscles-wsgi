@@ -1,4 +1,3 @@
-import cgi
 import urllib
 from urllib.parse import urlparse, urlunparse
 from operator import itemgetter
@@ -9,11 +8,34 @@ from muscles.core import inject
 import json
 import sys
 import email.parser
+import email.policy
 import tempfile
 import os
-import magic
 from http.cookies import SimpleCookie
 from .error_handler import ApplicationException, AttributeException
+
+try:
+    import cgi
+except ModuleNotFoundError:
+    cgi = None
+
+try:
+    import magic
+except ImportError:
+    magic = None
+
+
+def detect_mime_from_buffer(value):
+    if magic is None:
+        return 'application/octet-stream'
+    try:
+        return magic.Magic(mime=True).from_buffer(value)
+    except ImportError:
+        return 'application/octet-stream'
+
+
+def normalize_mime_type(value):
+    return 'image/jpeg' if value == 'image/jpg' else value
 
 
 def _split_on_find(content, bound):
@@ -119,8 +141,7 @@ class FileStorage:
         self._filename = filename
         self._file_type = file_type
         if mime_type is None:
-            mime = magic.Magic(mime=True)
-            mime_type = mime.from_buffer(self._value)
+            mime_type = detect_mime_from_buffer(self._value)
         self._mime_type = mime_type
         self._bytes_read = bytes_read
 
@@ -238,6 +259,41 @@ class FieldStorage:
 
     def __enter__(self):
         return self
+
+
+def parse_multipart_body(content_type, body, encoding='utf-8'):
+    fields = {}
+    raw_message = (
+        "Content-Type: %s\r\nMIME-Version: 1.0\r\n\r\n" % content_type
+    ).encode(encoding) + body
+    message = email.parser.BytesParser(policy=email.policy.default).parsebytes(raw_message)
+    for part in message.iter_parts():
+        name = part.get_param('name', header='content-disposition')
+        if not name:
+            continue
+        payload = part.get_payload(decode=True) or b''
+        filename = part.get_filename()
+        if filename is not None:
+            content_type = normalize_mime_type(part.get_content_type())
+            value = FileStorage(
+                name,
+                payload,
+                filename=filename,
+                mime_type=content_type,
+                file_type=content_type,
+                bytes_read=len(payload),
+            )
+        else:
+            charset = part.get_content_charset() or encoding
+            value = FieldStorage(name, payload.decode(charset))
+
+        if name in fields:
+            if not isinstance(fields[name], list):
+                fields[name] = [fields[name]]
+            fields[name].append(value)
+        else:
+            fields[name] = value
+    return fields
 
 
 class Request:
@@ -818,6 +874,13 @@ class RequestMaker:
 
     def make_body_from_multipart(self):
         fields = {}
+        if cgi is None:
+            return parse_multipart_body(
+                self.environ.get('CONTENT_TYPE', ''),
+                self.environ['wsgi.input'].read(),
+                self.charset,
+            )
+
         wsgi_input = cgi.FieldStorage(fp=self.environ['wsgi.input'], environ=self.environ, keep_blank_values=True)
         for name in wsgi_input.keys():
             if hasattr(wsgi_input[name], 'filename') and wsgi_input[name].filename is not None:
@@ -839,14 +902,12 @@ class RequestMaker:
         except ValueError:
             length = 0
         wsgi_input = self.environ['wsgi.input']
-        if 'wsgi.file_wrapper' in self.environ:
-            wsgi_input = self.environ['wsgi.file_wrapper'](wsgi_input, length)
         return wsgi_input.read(length)
 
     def make_body_from_raw(self):
         wsgi_input = self.make_body_from_buffer()
-        mime = magic.Magic(mime=True)
-        mime_type = mime.from_buffer(wsgi_input)
+        mime_type = self.environ.get('CONTENT_TYPE') or detect_mime_from_buffer(wsgi_input)
+        mime_type = normalize_mime_type(mime_type.split(';', 1)[0])
         if mime_type not in self.text_mime_types:
             wsgi_input = FileStorage(None, wsgi_input,
                                      filename=None,
@@ -905,6 +966,11 @@ class RequestMaker:
         :return: Request
         """
         environ = self.environ
+        path = environ.get('REQUEST_URI') or environ.get('PATH_INFO') or '/'
+        if 'REQUEST_URI' not in environ and environ.get('QUERY_STRING'):
+            path = "%s?%s" % (path, environ['QUERY_STRING'])
+        scheme = environ.get('UWSGI_ROUTER') or environ.get('wsgi.url_scheme') or 'http'
+        host = environ.get('HTTP_HOST') or environ.get('SERVER_NAME') or 'localhost'
         if self.request_type and hasattr(self, "make_body_from_%s" % self.request_type):
             try:
                 method = getattr(self, "make_body_from_%s" % self.request_type)
@@ -915,10 +981,10 @@ class RequestMaker:
             wsgi_input = self.make_body_from_raw()
         request = Request(
             method=environ['REQUEST_METHOD'],
-            protocol=environ['SERVER_PROTOCOL'],
-            url="%s://%s%s" % (environ['UWSGI_ROUTER'], environ['HTTP_HOST'], environ['REQUEST_URI']),
-            server=(environ['SERVER_NAME'], environ['SERVER_PORT']),
-            remote_addr=(environ['REMOTE_ADDR'], environ['REMOTE_PORT']),
+            protocol=environ.get('SERVER_PROTOCOL', 'HTTP/1.1'),
+            url="%s://%s%s" % (scheme, host, path),
+            server=(environ.get('SERVER_NAME', host), environ.get('SERVER_PORT', '80')),
+            remote_addr=(environ.get('REMOTE_ADDR', ''), environ.get('REMOTE_PORT', '')),
             headers=self.make_headers(),
             body=wsgi_input,
             is_json=self.request_type == 'json',
