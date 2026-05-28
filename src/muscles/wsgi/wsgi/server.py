@@ -371,11 +371,11 @@ class WsgiServer:
                     elif not isinstance(resp, BaseResponse) and isinstance(resp, tuple):
                         kwargs = {}
                         status = 200
-                        if len(resp) >= 0:
-                            kwargs['body'] = resp[0]
                         if len(resp) >= 1:
-                            status = resp[1]
+                            kwargs['body'] = resp[0]
                         if len(resp) >= 2:
+                            status = resp[1]
+                        if len(resp) >= 3:
                             kwargs['headers'] = resp[2]
                         resp = BaseResponse(status=status, request=request, **kwargs)
                     elif not isinstance(resp, BaseResponse):
@@ -438,11 +438,8 @@ class WsgiServer:
             if static['handler'] is not None:
                 resp = static['handler'](resp)
 
-            headers = []
-            for header in resp.headers:
-                headers.append('%s: %s' % (header[0], header[1]))
-
-            self.__transport.send_header(resp.status, resp.headers)
+            response = MakeResponse(response=resp)
+            self.__transport.send_header(response.http_status, response.headers)
             with io.open(resp_file, "rb") as f:
                 yield f.read()
         except Exception as e:

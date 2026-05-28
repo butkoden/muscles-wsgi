@@ -8,8 +8,8 @@ from muscles import CookieParameter
 from muscles import HeaderParameter
 from muscles import QueryParameter
 from muscles import JsonRequestBody
-from ...src.muscles.wsgi.wsgi import WsgiStrategy
-from ...src.muscles.wsgi.restful import RestApi
+from muscles.wsgi.wsgi import WsgiStrategy
+from muscles.wsgi.restful import RestApi
 from muscles import Context
 from muscles import ApplicationMeta
 from muscles import Configurator
@@ -330,13 +330,13 @@ def test_check_schema():
         assert pr['description'] == 'Системный Api'
         assert pr['termsOfService'] == 'http://swagger.io/terms/'
         assert pr['servers'] == [{'url': '/api/v1'}]
-        assert pr['paths']['/test'].get('get')
-        assert pr['paths']['/test'].get('post')
-        assert pr['paths']['/test'].get('put')
-        assert pr['paths']['/test'].get('delete')
-        assert pr['paths']['/test/{id}'].get('get')
-        assert pr['paths']['/test/{id}'].get('post')
-        assert pr['paths']['/test/{id}'].get('delete')
+        assert pr['paths']['/api/v1/test'].get('get')
+        assert pr['paths']['/api/v1/test'].get('post')
+        assert pr['paths']['/api/v1/test'].get('put')
+        assert pr['paths']['/api/v1/test'].get('delete')
+        assert pr['paths']['/api/v1/test/{id}'].get('get')
+        assert pr['paths']['/api/v1/test/{id}'].get('post')
+        assert pr['paths']['/api/v1/test/{id}'].get('delete')
 
 
 

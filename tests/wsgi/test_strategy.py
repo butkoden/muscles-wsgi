@@ -8,8 +8,8 @@ from muscles import CookieParameter
 from muscles import HeaderParameter
 from muscles import QueryParameter
 from muscles import JsonRequestBody
-from ...src.muscles.wsgi.wsgi import WsgiStrategy
-from ...src.muscles.wsgi.restful import RestApi
+from muscles.wsgi.wsgi import WsgiStrategy
+from muscles.wsgi.restful import RestApi
 from muscles import Context
 from muscles import ApplicationMeta
 from muscles import Configurator
