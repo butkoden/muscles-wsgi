@@ -1,0 +1,2 @@
+src/muscles/wsgi/assets/*.js linguist-vendored=true
+src/muscles/wsgi/assets/*.js linguist-detectable=false
