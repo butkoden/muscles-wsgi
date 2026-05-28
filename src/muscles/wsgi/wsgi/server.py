@@ -1,6 +1,7 @@
 import os
 import io
 import traceback
+import logging
 
 from muscles.core import NotFoundException, ApplicationException, ErrorException
 from muscles.core import AttributeErrorException
@@ -74,17 +75,12 @@ class WsgiTransport(Transport):
         """
         try:
             response = MakeResponse(response=response)
-            print("--------------------------------:")
-            print("HTTP make_response:", response)
-            print("HTTP STATUS:", response.http_status)
-            print("HTTP HEADERS:", response.headers)
-            print("HTTP BODY:", response.body)
+            self.server.logger.debug("WSGI response status=%s", response.http_status)
             self.send_header(response.http_status, response.headers)
             body = response.body if isinstance(response.body, list) else [response.body]
             return body
         except Exception as ae:
-            print(ae)
-            print(traceback.format_exc())
+            self.server.logger.exception("WSGI transport response error")
             raise ApplicationException(status=500, reason=ae, body=traceback.format_exc())
 
     def send_header(self, http_status, headers):
@@ -107,12 +103,10 @@ class WsgiTransport(Transport):
             request = requestMaker.make()
             return request
         except ApplicationException as ae:
-            # print(ae)
-            print(traceback.format_exc())
+            self.server.logger.exception("WSGI request maker error")
             raise ApplicationException(status=500, reason=ae, body=traceback.format_exc())
         except Exception as ae:
-            # print(ae)
-            print(traceback.format_exc())
+            self.server.logger.exception("WSGI request build error")
             raise ApplicationException(status=500, reason=ae, body=traceback.format_exc())
 
 
@@ -255,10 +249,13 @@ class WsgiServer:
     __host = 'localhost'
     __port = 80
 
-    def __init__(self, host, port, error_handler):
+    def __init__(self, host, port, error_handler, logger=None, debug=False):
         self.__host = host
         self.__port = port
         self.__error_handler = error_handler
+        self.logger = logger or logging.getLogger("muscles.wsgi")
+        self.debug = debug
+        self._route_cache = {}
 
         self.__transport = self.__transport_class()
         self.__transport.init_server(self)
@@ -283,8 +280,7 @@ class WsgiServer:
         try:
             return self.__transport.execute(*args, **kwargs)
         except Exception as ex:
-            print(ex)
-            traceback.print_stack()
+            self.logger.exception("WSGI execute error")
             return self.send_error(ex)
 
     def handler(self, request):
@@ -321,34 +317,43 @@ class WsgiServer:
                             resp = BaseResponse(status=200, body=resp)
                         return self.__transport.make_response(resp)
 
-            for key, instance in itinerary.instance_list():
-                call, dictionary = instance.get_current_route(request)
+            route_key = (
+                request.path,
+                request.method.lower() if request.method else "",
+                (request.content_type or "").lower(),
+            )
+            cached_instance = self._route_cache.get(route_key)
+            if cached_instance is not None:
+                call, dictionary = cached_instance.get_current_route(request)
                 if call:
                     request.route = call
-                    request.itinerary = instance
-                    if 'instance' in call.keys():
-                        for func in call['instance'].get_event('before_request'):
-                            func(request)
-                    break
+                    request.itinerary = cached_instance
+            if request.route is None:
+                for _, instance in itinerary.instance_list():
+                    call, dictionary = instance.get_current_route(request)
+                    if call:
+                        request.route = call
+                        request.itinerary = instance
+                        self._route_cache[route_key] = instance
+                        break
+            if request.route and 'instance' in request.route.keys():
+                for func in request.route['instance'].get_event('before_request'):
+                    func(request)
 
         except ErrorException as ae:
-            traceback.print_stack()
-            print(ae)
+            self.logger.exception("WSGI route resolution error")
             ae.body = traceback.format_exc()
             return self.send_error(ae, request)
         except ImportError as ae:
-            traceback.print_stack()
-            print(ae)
+            self.logger.exception("WSGI import error")
             ae = ApplicationException(status=500, reason=ae, body=traceback.format_exc().splitlines())
             return self.send_error(ae, request)
         except KeyError as ae:
-            traceback.print_stack()
-            print(ae)
+            self.logger.exception("WSGI key error")
             ae = ApplicationException(status=500, reason=ae, body=traceback.format_exc())
             return self.send_error(ae, request)
         except Exception as ae:
-            traceback.print_stack()
-            print(ae)
+            self.logger.exception("WSGI unexpected route error")
             ae = ApplicationException(status=500, reason=ae, body=traceback.format_exc())
             return self.send_error(ae, request)
 
@@ -394,28 +399,23 @@ class WsgiServer:
                             resp = handler(resp)
                     return self.__transport.make_response(resp)
                 except ApplicationException as ae:
-                    traceback.print_stack()
-                    print(ae)
+                    self.logger.exception("WSGI application exception")
                     ae = ApplicationException(status=400, reason=ae, body=traceback.format_exc().splitlines())
                     return self.send_error(ae, request)
                 except ErrorException as ae:
-                    traceback.print_stack()
-                    print(ae)
+                    self.logger.exception("WSGI error exception")
                     ae.body = traceback.format_exc().splitlines()
                     return self.send_error(ae, request)
                 except ImportError as ae:
-                    traceback.print_stack()
-                    print(ae)
+                    self.logger.exception("WSGI import exception")
                     ae = ApplicationException(status=500, reason=ae, body=traceback.format_exc().splitlines())
                     return self.send_error(ae, request)
                 except KeyError as ae:
-                    traceback.print_stack()
-                    print(ae)
+                    self.logger.exception("WSGI handler key error")
                     ae = AttributeErrorException(status=500, reason=ae, body=traceback.format_exc().splitlines())
                     return self.send_error(ae, request)
                 except Exception as ae:
-                    traceback.print_stack()
-                    print(ae)
+                    self.logger.exception("WSGI handler unexpected exception")
                     ae = ApplicationException(status=500, reason=ae, body=traceback.format_exc().splitlines())
                     return self.send_error(ae, request)
         return self.send_error(NotFoundException(status=404, reason="Not Found"), request)
@@ -452,20 +452,18 @@ class WsgiServer:
         :param request: Объект запроса
         :return:
         """
-        print('================ERROR/send_error>', err)
         try:
             status = err.status if hasattr(err, 'status') else 500
             reason = err.reason if hasattr(err, 'reason') else str(err)
             body = err.body if hasattr(err, 'body') else str(err)
         except Exception as e:
-            print('-----------------------------4')
-            print("Error while handling error:", e)
+            self.logger.exception("WSGI error serialization failure")
             status = 500
             reason = b'Internal Server Error'
             body = b'Internal Server Error'
-        print('================ERROR/status/reason/body>', status, reason)
-        print("\n".join(body) if isinstance(body, list) else body)
-        # traceback.print_stack()
+        self.logger.error("WSGI error status=%s reason=%s", status, reason)
+        if self.debug:
+            self.logger.debug("%s", "\n".join(body) if isinstance(body, list) else body)
 
         if issubclass(self.__error_handler, Exception):
             resp = self.__error_handler().handler(status=status, reason=reason, body=body)
@@ -474,7 +472,7 @@ class WsgiServer:
         # traceback.print_exc(file=sys.stdout)
         # call = routes.get_current_error_handler(resp)
 
-        for key, instance in itinerary.instance_list():
+        for _, instance in itinerary.instance_list():
             call = instance.get_current_error_handler(resp)
             if call:
                 resp.body = call['handler'](resp, request)
