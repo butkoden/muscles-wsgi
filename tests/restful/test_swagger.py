@@ -368,7 +368,6 @@ def test_check_schema_with_custom_openapi_version():
         schema = json.loads(pr)
         assert schema['openapi'] == '3.1.0'
 
-
 def test_check_default_docs_and_openapi_endpoints():
     environ.update({
         'REQUEST_METHOD': 'GET',
