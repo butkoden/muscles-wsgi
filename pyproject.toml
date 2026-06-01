@@ -6,7 +6,7 @@ build-backend = "poetry.core.masonry.api"
 [tool.poetry]
 name = "muscles-wsgi"
 version = "0.0.2"
-description = ""
+description = "Muscles WSGI runtime adapter for Web/API applications"
 authors = ["Denis B. <denis@butko.info>"]
 packages = [{include = "muscles", from = "src"}]
 
