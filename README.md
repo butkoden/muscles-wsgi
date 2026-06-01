@@ -4,6 +4,11 @@
 request/response handling, templates, static files, REST controllers and Swagger
 UI on top of the shared `muscles` core.
 
+## Installation
+
+Canonical ecosystem install matrix is documented in core:
+[Muscles installation matrix](https://github.com/butkoden/muscles/blob/master/docs/installation.md).
+
 ## Runtime
 
 An app binds `Context` to `WsgiStrategy`:
@@ -50,3 +55,5 @@ Run tests with sibling packages on `PYTHONPATH` when working from source:
 ```bash
 PYTHONPATH=../muscles/src:src python -m pytest -q
 ```
+
+Production notes: [docs/production.md](docs/production.md).
