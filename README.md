@@ -48,6 +48,10 @@ The request parser supports standard WSGI input and does not require optional
 system libraries to import. Multipart parsing uses the Python standard library;
 `python-magic` is treated as optional.
 
+WSGI strategy uses a persistent server lifecycle on strategy/app level, so
+route cache is reused across requests while `environ`/`start_response` remain
+strictly per-request state.
+
 ## Development
 
 Run tests with sibling packages on `PYTHONPATH` when working from source:
