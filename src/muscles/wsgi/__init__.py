@@ -5,6 +5,7 @@ from .template import Template
 from .template import *
 from .restful import *
 from .assets import *
+from .providers import WsgiGeneratorProvider
 
 
 __all__ = (
@@ -28,6 +29,8 @@ __all__ = (
     "BadResponse",
     "BaseResponse",
     "MakeResponse",
+    "JsonResponse",
+    "HtmlResponse",
     "code_status",
     "Transport",
     "WsgiTransport",
@@ -44,4 +47,5 @@ __all__ = (
     "api",
     "routes",
     "itinerary",
+    "WsgiGeneratorProvider",
 )
