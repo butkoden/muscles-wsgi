@@ -266,6 +266,12 @@ class WsgiServer:
         :param transport: Транспорт
         :return:
         """
+        if (
+            self.__transport is not None
+            and self.__transport_class is transport
+            and isinstance(self.__transport, transport)
+        ):
+            return
         self.__transport_class = transport
         self.__transport = transport()
         self.__transport.init_server(self)
