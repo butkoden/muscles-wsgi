@@ -13,6 +13,9 @@ class WsgiStrategy(BaseStrategy):
     """
     Стратегия WSGI сервера
     """
+    def __init__(self):
+        self._server = None
+        self._server_key = None
 
     def execute(self, *args, error_handler: Optional[ResponseErrorHandler] = None, **kwargs):
         """
@@ -34,7 +37,11 @@ class WsgiStrategy(BaseStrategy):
             logger = logging.getLogger("muscles.wsgi")
         debug = bool(kwargs.get('debug', False))
 
-        server = WsgiServer(host, port, error_handler=error_handler, logger=logger, debug=debug)
+        server_key = (host, port, bool(debug), error_handler, id(logger))
+        if self._server is None or self._server_key != server_key:
+            self._server = WsgiServer(host, port, error_handler=error_handler, logger=logger, debug=debug)
+            self._server_key = server_key
+        server = self._server
         transport = kwargs.get('transport', WsgiTransport)
         server.init_transport(transport)
         return server.execute(*args, **kwargs)

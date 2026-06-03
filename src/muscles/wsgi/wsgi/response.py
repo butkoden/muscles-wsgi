@@ -27,6 +27,7 @@ class BaseResponse:
     _body: Union[BaseModel, str, int, tuple, dict, list, bytes, bool, None] = None
     _errors: Union[BaseModel, str, int, tuple, dict, list, bytes, bool, None] = None
     _file: Union[str, None] = None
+    _content_type: Union[str, None] = None
 
     def __init__(self, *args,
                  status: Union[str, int, None] = None,
@@ -35,7 +36,8 @@ class BaseResponse:
                  file: Union[str, None] = None,
                  headers: list[tuple] = None,
                  reason: Union[str, None] = None,
-                 request: Union[Request, None] = None):
+                 request: Union[Request, None] = None,
+                 content_type: Union[str, None] = None):
         if reason is None:
             reason = None
         if headers is None:
@@ -45,6 +47,7 @@ class BaseResponse:
         self._headers = headers
         self._reason = reason
         self._file = file
+        self._content_type = content_type
         if len(args) == 0:
             self._body = body
             self._status = status if status is not None else 200
@@ -142,7 +145,9 @@ class BaseResponse:
 
         headers = [(str(header[0]), str(header[1])) for header in self._headers if _condition(header)]
 
-        if self.request is not None and self.request.is_json:
+        if self._content_type:
+            content_type = self._content_type
+        elif self.request is not None and self.request.is_json:
             content_type = 'application/json; charset=utf-8'
         elif self.type in ['json']:
             content_type = 'application/json; charset=utf-8'

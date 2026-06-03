@@ -20,7 +20,7 @@ from muscles.wsgi import WsgiStrategy
 
 class App(metaclass=ApplicationMeta):
     config = Configurator(obj={"main": {"HOST": "0.0.0.0", "PORT": "8080"}})
-    context = Context(WsgiStrategy, {})
+    context = Context(WsgiStrategy, params={})
 
     def run(self, *args):
         return self.context.execute(*args, shutup=True)
@@ -47,6 +47,10 @@ More detail: [docs/openapi-and-routing.md](docs/openapi-and-routing.md).
 The request parser supports standard WSGI input and does not require optional
 system libraries to import. Multipart parsing uses the Python standard library;
 `python-magic` is treated as optional.
+
+WSGI strategy uses a persistent server lifecycle on strategy/app level, so
+route cache is reused across requests while `environ`/`start_response` remain
+strictly per-request state.
 
 ## Development
 
