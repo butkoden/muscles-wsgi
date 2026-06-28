@@ -358,6 +358,40 @@ class WsgiServer:
         else:
             return self.handle_request(request)
 
+    def _resolve_route(self, request):
+        """
+        Разрешение маршрута по кэшу/реестру.
+        :param request: Запрос
+        :return: Параметры найденного маршрута.
+        """
+        route_key = (
+            request.path,
+            request.method.lower() if request.method else "",
+            (request.content_type or "").lower(),
+        )
+        dictionary = {}
+        cached_route = self._route_cache.get(route_key)
+        if cached_route is not None:
+            cached_instance, cached_call, dictionary = cached_route
+            if cached_call:
+                request.route = cached_call
+                request.itinerary = cached_instance
+            return dictionary
+        if request.route is None:
+            for _, instance in itinerary.instance_list():
+                call, dictionary = instance.get_current_route(request)
+                if call:
+                    request.route = call
+                    request.itinerary = instance
+                    self._route_cache[route_key] = (instance, call, dictionary)
+                    break
+            if request.route is None:
+                self._route_cache[route_key] = (None, None, {})
+        if request.route and 'instance' in request.route.keys():
+            for func in request.route['instance'].get_event('before_request'):
+                func(request)
+        return dictionary
+
     @inject(EventsStorageInterface)
     def handle_request(self, request, evnetStorage: EventsStorageInterface):
         """
@@ -379,28 +413,7 @@ class WsgiServer:
                             resp = BaseResponse(status=200, body=resp)
                         return self.__transport.make_response(resp)
 
-            route_key = (
-                request.path,
-                request.method.lower() if request.method else "",
-                (request.content_type or "").lower(),
-            )
-            cached_instance = self._route_cache.get(route_key)
-            if cached_instance is not None:
-                call, dictionary = cached_instance.get_current_route(request)
-                if call:
-                    request.route = call
-                    request.itinerary = cached_instance
-            if request.route is None:
-                for _, instance in itinerary.instance_list():
-                    call, dictionary = instance.get_current_route(request)
-                    if call:
-                        request.route = call
-                        request.itinerary = instance
-                        self._route_cache[route_key] = instance
-                        break
-            if request.route and 'instance' in request.route.keys():
-                for func in request.route['instance'].get_event('before_request'):
-                    func(request)
+            dictionary = self._resolve_route(request)
 
         except ErrorException as ae:
             self.logger.exception("WSGI route resolution error")

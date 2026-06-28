@@ -5,7 +5,9 @@ from .template import Template
 from .template import *
 from .restful import *
 from .assets import *
+from .app import MuscularWsgiApp, wsgi_app
 from .providers import WsgiGeneratorProvider
+from .testing import TestClient, TestResponse
 
 
 __all__ = (
@@ -47,5 +49,9 @@ __all__ = (
     "api",
     "routes",
     "itinerary",
+    "MuscularWsgiApp",
+    "wsgi_app",
     "WsgiGeneratorProvider",
+    "TestClient",
+    "TestResponse",
 )

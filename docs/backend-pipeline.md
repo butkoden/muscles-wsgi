@@ -1,7 +1,24 @@
 # Backend Pipeline
 
+Russian version: [backend-pipeline.ru.md](backend-pipeline.ru.md)
+
 WSGI uses the shared `muscles` core contracts for route groups, middleware,
 guards, exception mapping, auth metadata, response helpers and CORS.
+
+## ASGI/WSGI Parity
+
+The WSGI runtime mirrors ASGI behavior for the shared application layer. You
+should be able to replace `AsgiStrategy` with `WsgiStrategy` while keeping the
+same route groups, OpenAPI metadata, guards, auth overrides, response helpers,
+file upload handlers and typed handler arguments.
+
+Use the WSGI app wrapper when a server expects a plain WSGI callable:
+
+```python
+from muscles.wsgi import MuscularWsgiApp, wsgi_app
+
+application = wsgi_app(MuscularWsgiApp())
+```
 
 ## Route Groups And OpenAPI
 
@@ -79,6 +96,20 @@ WSGI skips matching guards and route-level security for endpoints marked with
 If a handler raises a mapped exception, WSGI preserves the mapped status before
 creating the problem response.
 
+## Response Normalization
+
+WSGI accepts the same handler return shapes as ASGI:
+
+```python
+return {"ok": True}
+return [1, "a", {"b": True}]
+return ({"created": True}, 201, [("X-Trace-Id", "abc")])
+return b"raw bytes"
+```
+
+Core response helpers such as `JsonResponse`, `HtmlResponse`, `BytesResponse`,
+`FileResponse` and `NoContentResponse` are normalized by the runtime.
+
 ## File Upload Helpers
 
 Multipart files are exposed as `FileStorage`:
@@ -92,3 +123,18 @@ def upload(request):
 ```
 
 `safe=True` stores the file under a sanitized basename.
+
+## Test Client
+
+`muscles.wsgi.testing.TestClient` calls a WSGI app in-process and mirrors the
+ASGI test client API:
+
+```python
+from muscles.wsgi.testing import TestClient
+
+client = TestClient(application).with_bearer(token)
+response = client.post("/api/documents", json={"title": "Spec"})
+
+assert response.status_code == 201
+assert response.json()["title"] == "Spec"
+```

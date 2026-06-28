@@ -24,3 +24,15 @@ def test_group_metadata_is_dumped_to_openapi():
     assert operation["security"] == [{"Bearer": []}]
     assert "401" in {str(key) for key in operation["responses"]}
     assert schema["components"]["securitySchemes"]["Bearer"]["scheme"] == "bearer"
+
+
+def test_controller_accepts_stateful_flag_like_asgi():
+    api = RestApi(name="StatefulControllerWsgi", prefix="/api")
+
+    @api.controller("/sessions", stateful=True)
+    class SessionController:
+        @api.action(route="/{id}", method="GET")
+        def show(self, request, id):
+            return {"id": id}
+
+    assert SessionController.stateful_controller is True

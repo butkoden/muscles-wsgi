@@ -1,5 +1,7 @@
 # OpenAPI And Routing
 
+Russian version: [openapi-and-routing.ru.md](openapi-and-routing.ru.md)
+
 WSGI API routing is built from the same core route tree as the rest of Muscles.
 The HTTP transport receives a request, resolves the route, runs the handler and
 then serializes the framework response back to WSGI.
@@ -29,6 +31,9 @@ class BookingController:
     def create(self, request):
         return request.json
 ```
+
+`controller(..., stateful=True)` is supported for ASGI parity and marks the
+controller class with `stateful_controller=True`.
 
 ## Generated Paths
 
@@ -81,6 +86,9 @@ Route registration should happen during application startup/imports. Repeated
 imports must not append duplicate named routes, otherwise every request becomes
 slower. The core itinerary indexes routes and caches matches, so WSGI should use
 that structure instead of maintaining separate route lists.
+
+WSGI caches the resolved route, matching itinerary and path parameters together,
+matching the ASGI route cache behavior for repeated requests.
 
 ## Optional Dependencies
 
