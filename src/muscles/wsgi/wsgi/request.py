@@ -1,10 +1,12 @@
 import urllib
 from urllib.parse import urlparse, urlunparse
 from operator import itemgetter
+import re
 
 from muscles.core import Dependency
 from muscles.core import EventsStorageInterface
 from muscles.core import inject
+from muscles.core import normalize_path
 import json
 import sys
 import email.parser
@@ -143,7 +145,7 @@ class FileStorage:
         if mime_type is None:
             mime_type = detect_mime_from_buffer(self._value)
         self._mime_type = mime_type
-        self._bytes_read = bytes_read
+        self._bytes_read = bytes_read or len(self._value)
 
     def __del__(self):
         try:
@@ -198,6 +200,23 @@ class FileStorage:
     def value(self):
         return self._value
 
+    @property
+    def content_type(self):
+        return self._mime_type
+
+    @property
+    def safe_filename(self):
+        name = os.path.basename(self._filename or self._name or "upload.bin")
+        name = re.sub(r"[^A-Za-z0-9._-]+", "_", name).strip("._")
+        return name or "upload.bin"
+
+    def validate(self, max_size=None, allowed_content_types=None):
+        if max_size is not None and self._bytes_read > max_size:
+            raise ValueError("Uploaded file is too large")
+        if allowed_content_types is not None and self._mime_type not in set(allowed_content_types):
+            raise ValueError("Uploaded file content type is not allowed")
+        return self
+
     def __str__(self):
         return "FileStorage(%r, %r)" % (self._mime_type, self.filename)
 
@@ -211,18 +230,22 @@ class FileStorage:
     def __exit__(self, *args):
         self.fp.close()
 
-    def save(self, filepath=None):
+    def save(self, filepath=None, safe=False):
         """
         Сохраняет файл по указаному пути
         :param filepath: путь сохранения файла
         :return: None
         """
+        if safe and filepath is not None and os.path.isdir(filepath):
+            filepath = os.path.join(filepath, self.safe_filename)
         self._filepath = os.path.abspath(filepath)
         self._filename = os.path.basename(self._filepath)
-        fp = open(filepath, 'wb')
-        fp.write(self.fp.read())
+        self.fp.seek(0)
+        with open(filepath, 'wb') as fp:
+            fp.write(self.fp.read())
         self.fp.close()
-        self.fp = fp
+        self.fp = open(filepath, 'rb')
+        return self._filepath
 
 
 class FieldStorage:
@@ -967,7 +990,11 @@ class RequestMaker:
         """
         environ = self.environ
         path = environ.get('REQUEST_URI') or environ.get('PATH_INFO') or '/'
-        if 'REQUEST_URI' not in environ and environ.get('QUERY_STRING'):
+        path_part, separator, query_part = path.partition('?')
+        path = normalize_path(path_part)
+        if separator:
+            path = "%s?%s" % (path, query_part)
+        elif 'REQUEST_URI' not in environ and environ.get('QUERY_STRING'):
             path = "%s?%s" % (path, environ['QUERY_STRING'])
         scheme = environ.get('UWSGI_ROUTER') or environ.get('wsgi.url_scheme') or 'http'
         host = environ.get('HTTP_HOST') or environ.get('SERVER_NAME') or 'localhost'

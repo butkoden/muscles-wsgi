@@ -102,6 +102,8 @@ class RestApi(Itinerary):
     def _trigger_set_handler(self, handler, *args, tags: list = None, description: str = None, summary: str = None,
                              request: list = [], security: list = [], response: dict = {}, parameters: list = [],
                              **kwargs):
+        if not hasattr(handler, 'tags') or not handler.tags:
+            handler.tags = tags or []
         if not hasattr(handler, 'description') or not handler.description:
             handler.description = description
         if not hasattr(handler, 'summary') or not handler.summary:
@@ -116,11 +118,18 @@ class RestApi(Itinerary):
             handler.parameters = parameters
         else:
             handler.parameters = handler.parameters + parameters
+        for key, value in kwargs.items():
+            if key.startswith("_"):
+                continue
+            if value in (None, [], {}, "") and hasattr(handler, key):
+                continue
+            setattr(handler, key, value)
 
         return handler
 
     def _trigger_set_controller(self, handler, *args, tags: list = None, description: str = None, summary: str = None,
                                 request: list = [], security: list = [], response: dict = {}, parameters: list = [],
+                                stateful: bool = False,
                                 **kwargs):
         self.swagger.tags.append({
             "name": handler.__name__,
@@ -130,6 +139,8 @@ class RestApi(Itinerary):
             #     "url": "http://swagger.io"
             # }
         })
+        if not hasattr(handler, 'stateful_controller'):
+            handler.stateful_controller = stateful
         return handler
 
     def add(self, route, key=None, handler=None, method: str = '*', content_type: str = '*/*',
@@ -184,7 +195,8 @@ class RestApi(Itinerary):
         return decorator
 
     def controller(self, route, model: Schema = None, tags: list = None, description: str = None, summary: str = None,
-                   request: list = [], security: list = [], response: dict = {}, parameters: list = [], **kwargs):
+                   request: list = [], security: list = [], response: dict = {}, parameters: list = [],
+                   stateful: bool = False, **kwargs):
         """
         Регистрация контроллера для обработки запросов классом
 
@@ -197,11 +209,12 @@ class RestApi(Itinerary):
         :param response:
         :param model: Модель данных
         :param route: Маршрут
+        :param stateful: Не кэшировать инстанс контроллера между запросами
         :return:
         """
         decorator = super().controller(route, model=model, tags=tags, description=description, summary=summary,
                                        request=request, security=security, response=response, parameters=parameters,
-                                       **kwargs)
+                                       stateful=stateful, **kwargs)
         return decorator
 
     def action(self, route=None, key=None, module=None, method: str = '*', content_type: str = '*/*',

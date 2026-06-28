@@ -1,5 +1,7 @@
 # OpenAPI And Routing
 
+Russian version: [openapi-and-routing.ru.md](openapi-and-routing.ru.md)
+
 WSGI API routing is built from the same core route tree as the rest of Muscles.
 The HTTP transport receives a request, resolves the route, runs the handler and
 then serializes the framework response back to WSGI.
@@ -30,6 +32,9 @@ class BookingController:
         return request.json
 ```
 
+`controller(..., stateful=True)` is supported for ASGI parity and marks the
+controller class with `stateful_controller=True`.
+
 ## Generated Paths
 
 The OpenAPI builder exports external paths, not only internal action paths:
@@ -40,12 +45,50 @@ The OpenAPI builder exports external paths, not only internal action paths:
 
 This keeps Swagger UI curl examples aligned with the real application URL.
 
+## Route Groups
+
+`RestApi.group()` registers routes with a shared prefix and inherited OpenAPI
+metadata:
+
+```python
+from muscles import BearerAuthSecurity, JsonResponseBody
+
+documents = api.group(
+    "/documents",
+    tags=["Documents"],
+    security=[BearerAuthSecurity()],
+    response={401: JsonResponseBody(description="Unauthorized")},
+)
+
+
+@documents.init("/{id}", method="GET", summary="Show document")
+def show(request, id):
+    return {"id": id}
+```
+
+The generated operation is emitted as `get`, includes `tags`, `security` and
+common responses, and registers the bearer scheme in OpenAPI components.
+
+Endpoint metadata can override inherited auth:
+
+```python
+@documents.init("/login", method="POST", auth=False)
+def login(request):
+    return {"token": "issued-token"}
+```
+
+`auth=False` clears inherited security for that operation and tells the WSGI
+pipeline to skip matching auth guards.
+
 ## Performance Notes
 
 Route registration should happen during application startup/imports. Repeated
 imports must not append duplicate named routes, otherwise every request becomes
 slower. The core itinerary indexes routes and caches matches, so WSGI should use
 that structure instead of maintaining separate route lists.
+
+WSGI caches the resolved route, matching itinerary and path parameters together,
+matching the ASGI route cache behavior for repeated requests.
 
 ## Optional Dependencies
 

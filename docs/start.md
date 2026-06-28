@@ -34,7 +34,7 @@
 ```python
 import logging
 from muscles import Context
-from muscles_wsgi import WsgiStrategy
+from muscles.wsgi import WsgiStrategy
 
 context = Context(
     WsgiStrategy,
@@ -48,6 +48,25 @@ context = Context(
 - `logger`: объект `logging.Logger` или строка с именем логгера.
 - `debug=True`: включает расширенные debug-сообщения фреймворка.
 - если `logger` не передан, используется логгер `muscles.wsgi`.
+
+
+## Совместимость с ASGI
+
+WSGI runtime поддерживает тот же application-level контракт, что и ASGI:
+route groups, OpenAPI metadata, guards, `auth=False`, response helpers,
+typed handler arguments и file uploads. Если приложение не использует
+transport-specific код, замена `AsgiStrategy` на `WsgiStrategy` не должна
+ломать маршруты и handlers.
+
+Для серверов и тестов можно использовать WSGI entrypoint и in-process client:
+
+```python
+from muscles.wsgi import MuscularWsgiApp, TestClient, wsgi_app
+
+application = wsgi_app(MuscularWsgiApp())
+client = TestClient(application).with_bearer("token")
+response = client.post("/api/documents", json={"title": "Spec"})
+```
 
 
 ## Изменения стабильности и скорости

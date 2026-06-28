@@ -30,6 +30,26 @@ class App(metaclass=ApplicationMeta):
 standard WSGI environment keys such as `PATH_INFO`, `QUERY_STRING` and
 `wsgi.url_scheme`.
 
+## ASGI/WSGI Parity
+
+WSGI mirrors the ASGI developer-facing API. An application should be able to
+switch from `AsgiStrategy` to `WsgiStrategy` without changing route groups,
+OpenAPI metadata, guards, auth overrides, response helpers, file upload
+handlers or typed handler arguments.
+
+The WSGI package also exposes the same convenience layers:
+
+```python
+from muscles.wsgi import MuscularWsgiApp, TestClient, wsgi_app
+
+application = wsgi_app(MuscularWsgiApp())
+client = TestClient(application).with_bearer("token")
+response = client.post("/api/documents", json={"title": "Spec"})
+```
+
+Use `auth=False` on a route when a public endpoint such as `/api/login` lives
+inside a protected API group.
+
 ## REST API And Swagger
 
 `RestApi` registers controllers and actions into the shared route structure.
@@ -41,6 +61,11 @@ action is registered as `/bookings` under prefix `/api/v1`, the schema exposes
 `/api/v1/bookings`.
 
 More detail: [docs/openapi-and-routing.md](docs/openapi-and-routing.md).
+Backend pipeline features are documented in
+[docs/backend-pipeline.md](docs/backend-pipeline.md).
+Russian documentation:
+[docs/openapi-and-routing.ru.md](docs/openapi-and-routing.ru.md) and
+[docs/backend-pipeline.ru.md](docs/backend-pipeline.ru.md).
 
 ## Request Handling
 

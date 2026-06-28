@@ -2,10 +2,12 @@ import os
 import io
 import traceback
 import logging
+import inspect
+from dataclasses import is_dataclass
 
 from muscles.core import NotFoundException, ApplicationException, ErrorException
 from muscles.core import AttributeErrorException
-from muscles.core import inject, EventsStorageInterface
+from muscles.core import Dependency, inject, EventsStorageInterface
 from muscles.core import BaseResponse as CoreBaseResponse
 from muscles.core import normalize_problem_payload
 from .request import RequestMaker
@@ -294,6 +296,20 @@ class WsgiServer:
     def _to_protocol_response(self, response, request=None):
         if isinstance(response, BaseResponse):
             return response
+        if isinstance(response, ApplicationException):
+            return BaseResponse(
+                status=response.status,
+                body=response.body or {"error": str(response.reason)},
+                request=request,
+                content_type="application/problem+json",
+            )
+        if isinstance(response, BaseException) and hasattr(response, "status"):
+            return BaseResponse(
+                status=getattr(response, "status"),
+                body=normalize_problem_payload(response, request=request, include_trace=self.debug),
+                request=request,
+                content_type="application/problem+json",
+            )
         if isinstance(response, CoreBaseResponse):
             if response.redirect:
                 return BaseResponse.redirect(response.redirect, status=response.status)
@@ -342,6 +358,40 @@ class WsgiServer:
         else:
             return self.handle_request(request)
 
+    def _resolve_route(self, request):
+        """
+        Разрешение маршрута по кэшу/реестру.
+        :param request: Запрос
+        :return: Параметры найденного маршрута.
+        """
+        route_key = (
+            request.path,
+            request.method.lower() if request.method else "",
+            (request.content_type or "").lower(),
+        )
+        dictionary = {}
+        cached_route = self._route_cache.get(route_key)
+        if cached_route is not None:
+            cached_instance, cached_call, dictionary = cached_route
+            if cached_call:
+                request.route = cached_call
+                request.itinerary = cached_instance
+            return dictionary
+        if request.route is None:
+            for _, instance in itinerary.instance_list():
+                call, dictionary = instance.get_current_route(request)
+                if call:
+                    request.route = call
+                    request.itinerary = instance
+                    self._route_cache[route_key] = (instance, call, dictionary)
+                    break
+            if request.route is None:
+                self._route_cache[route_key] = (None, None, {})
+        if request.route and 'instance' in request.route.keys():
+            for func in request.route['instance'].get_event('before_request'):
+                func(request)
+        return dictionary
+
     @inject(EventsStorageInterface)
     def handle_request(self, request, evnetStorage: EventsStorageInterface):
         """
@@ -351,6 +401,10 @@ class WsgiServer:
         """
         try:
             before_request = evnetStorage.get('before_request')
+            cors_response = self._cors_preflight_response(request)
+            if cors_response is not None:
+                return self.__transport.make_response(self._to_protocol_response(cors_response, request=request))
+
             if before_request:
                 for handler in before_request:
                     resp = handler(request)
@@ -359,28 +413,7 @@ class WsgiServer:
                             resp = BaseResponse(status=200, body=resp)
                         return self.__transport.make_response(resp)
 
-            route_key = (
-                request.path,
-                request.method.lower() if request.method else "",
-                (request.content_type or "").lower(),
-            )
-            cached_instance = self._route_cache.get(route_key)
-            if cached_instance is not None:
-                call, dictionary = cached_instance.get_current_route(request)
-                if call:
-                    request.route = call
-                    request.itinerary = cached_instance
-            if request.route is None:
-                for _, instance in itinerary.instance_list():
-                    call, dictionary = instance.get_current_route(request)
-                    if call:
-                        request.route = call
-                        request.itinerary = instance
-                        self._route_cache[route_key] = instance
-                        break
-            if request.route and 'instance' in request.route.keys():
-                for func in request.route['instance'].get_event('before_request'):
-                    func(request)
+            dictionary = self._resolve_route(request)
 
         except ErrorException as ae:
             self.logger.exception("WSGI route resolution error")
@@ -404,11 +437,11 @@ class WsgiServer:
                 resp = BaseResponse.redirect(request.route['redirect'])
             else:
                 try:
-                    if hasattr(request.route['handler'], 'controller'):
-                        resp = request.route['handler'](request.route['handler'].controller(), request=request,
-                                                        **dictionary)
-                    else:
-                        resp = request.route['handler'](request=request, **dictionary)
+                    guard_response = self._run_guards(request)
+                    if guard_response is not None:
+                        return self.__transport.make_response(self._to_protocol_response(guard_response, request=request))
+                    self._run_security(request)
+                    resp = self._call_route_handler(request, dictionary)
                     resp = self._to_protocol_response(resp, request=request)
 
                     if hasattr(request.itinerary, 'modify_response'):
@@ -425,7 +458,7 @@ class WsgiServer:
                     return self.__transport.make_response(resp)
                 except ApplicationException as ae:
                     self.logger.exception("WSGI application exception")
-                    ae = ApplicationException(status=400, reason=ae, body=traceback.format_exc().splitlines())
+                    ae = ApplicationException(status=ae.status, reason=ae.reason, body=ae.body, traceback=traceback.format_exc().splitlines())
                     return self.send_error(ae, request)
                 except ErrorException as ae:
                     self.logger.exception("WSGI error exception")
@@ -437,15 +470,184 @@ class WsgiServer:
                     return self.send_error(ae, request)
                 except KeyError as ae:
                     self.logger.exception("WSGI handler key error")
+                    if self._has_exception_mapping(ae, request):
+                        return self.send_error(ae, request)
                     ae = AttributeErrorException(status=500, reason=ae, body=traceback.format_exc().splitlines())
                     return self.send_error(ae, request)
                 except Exception as ae:
                     self.logger.exception("WSGI handler unexpected exception")
+                    if self._has_exception_mapping(ae, request):
+                        return self.send_error(ae, request)
                     ae = ApplicationException(status=500, reason=ae, body=traceback.format_exc().splitlines())
                     return self.send_error(ae, request)
         if self._has_matching_path(request.path):
             return self.__transport.make_response(BaseResponse(status=404, body={}, request=request))
         return self.send_error(NotFoundException(status=404, reason="Not Found"), request)
+
+    def _matching_path_instances(self, path: str):
+        matched = []
+        for _, instance in itinerary.instance_list():
+            route_node, _ = instance.match_with_params(path)
+            if route_node is not None:
+                matched.append(instance)
+        return matched
+
+    def _cors_preflight_response(self, request):
+        if (request.method or "").upper() != "OPTIONS":
+            return None
+        for instance in self._matching_path_instances(request.path):
+            for middleware in getattr(instance, "get_middlewares", lambda: [])():
+                if getattr(middleware, "is_cors_middleware", False):
+                    return middleware.preflight_response(request)
+        return None
+
+    def _header_lookup(self, headers, name):
+        wanted = name.replace("_", "-").lower()
+        for key, value in (headers or {}).items():
+            if key.replace("_", "-").lower() == wanted:
+                return value
+        return None
+
+    def _coerce_value(self, annotation, value):
+        if annotation is inspect._empty or value is None:
+            return value
+        try:
+            if annotation in (str, int, float, bool):
+                return annotation(value)
+        except Exception as exc:
+            raise ApplicationException(status=422, reason=f"Invalid value for {annotation}", body=str(exc))
+        return value
+
+    def _coerce_body(self, annotation, payload):
+        if annotation is inspect._empty:
+            return payload
+        if annotation in (dict, list, str, int, float, bool):
+            return payload
+        try:
+            if hasattr(annotation, "model_validate"):
+                return annotation.model_validate(payload)
+            if hasattr(annotation, "parse_obj"):
+                return annotation.parse_obj(payload)
+            if is_dataclass(annotation):
+                return annotation(**(payload or {}))
+            if inspect.isclass(annotation) and isinstance(payload, dict):
+                return annotation(**payload)
+        except Exception as exc:
+            raise ApplicationException(status=422, reason="Request body validation failed", body=str(exc))
+        return payload
+
+    def _resolve_dependency(self, annotation):
+        if annotation is inspect._empty:
+            return None
+        try:
+            return Dependency.resolve(annotation)
+        except Exception:
+            return None
+
+    def _build_handler_kwargs(self, handler, request, dictionary):
+        signature = inspect.signature(handler)
+        kwargs = {}
+        for name, param in signature.parameters.items():
+            if name == "self":
+                continue
+            if name == "request":
+                kwargs[name] = request
+                continue
+            if name in dictionary:
+                kwargs[name] = self._coerce_value(param.annotation, dictionary[name])
+                continue
+
+            dependency = self._resolve_dependency(param.annotation)
+            if dependency is not None:
+                kwargs[name] = dependency
+                continue
+
+            if name == "body":
+                kwargs[name] = self._coerce_body(param.annotation, getattr(request, "json", None))
+                continue
+
+            query = getattr(request, "query", {}) or {}
+            if name in query:
+                kwargs[name] = self._coerce_value(param.annotation, query[name])
+                continue
+
+            header_value = self._header_lookup(getattr(request, "headers", {}) or {}, name)
+            if header_value is not None:
+                kwargs[name] = self._coerce_value(param.annotation, header_value)
+                continue
+
+            cookies = getattr(request, "cookies", {}) or {}
+            if name in cookies:
+                kwargs[name] = self._coerce_value(param.annotation, cookies[name])
+                continue
+
+            if param.default is inspect._empty:
+                raise ApplicationException(status=422, reason=f"Missing required handler argument `{name}`")
+        return kwargs
+
+    def _run_guards(self, request):
+        if not getattr(request, "itinerary", None) or not hasattr(request.itinerary, "get_guards"):
+            return None
+        for guard in request.itinerary.get_guards(request):
+            response = guard(request)
+            if response is not None:
+                return response
+        return None
+
+    def _has_exception_mapping(self, error, request):
+        current_itinerary = getattr(request, "itinerary", None)
+        finder = getattr(current_itinerary, "_find_exception_error_mapping", None)
+        if finder is None:
+            return False
+        status, handler = finder(error)
+        return status is not None or handler is not None
+
+    def _prepare_error(self, err, request=None):
+        current_itinerary = getattr(request, "itinerary", None)
+        if current_itinerary is None:
+            return err, None
+        call = current_itinerary.get_current_error_handler(err)
+        if call and call.get("handler"):
+            return err, call
+        return err, None
+
+    def _run_security(self, request):
+        is_auth_disabled = getattr(getattr(request, "itinerary", None), "is_auth_disabled", None)
+        if is_auth_disabled and is_auth_disabled(request.route):
+            return
+        handler = request.route["handler"]
+        for security in getattr(handler, "security", []) or []:
+            if not hasattr(security, "authenticate_header"):
+                continue
+            result = security.authenticate_header(self._header_lookup(request.headers, "Authorization"))
+            if result is None:
+                raise ApplicationException(status=401, reason="Unauthorized")
+            request.actor = result.get("user")
+
+    def _call_route_handler(self, request, dictionary):
+        middlewares = []
+        if getattr(request, "itinerary", None) and hasattr(request.itinerary, "get_middlewares"):
+            middlewares = request.itinerary.get_middlewares()
+
+        def call_next(req):
+            return self._call_handler(req, dictionary)
+
+        next_call = call_next
+        for middleware in reversed(middlewares):
+            current_next = next_call
+
+            def wrapped(req, middleware=middleware, current_next=current_next):
+                return middleware(req, current_next)
+
+            next_call = wrapped
+        return next_call(request)
+
+    def _call_handler(self, request, dictionary):
+        handler = request.route['handler']
+        kwargs = self._build_handler_kwargs(handler, request, dictionary)
+        if hasattr(handler, 'controller'):
+            return handler(handler.controller(), **kwargs)
+        return handler(**kwargs)
 
     def _has_matching_path(self, path: str) -> bool:
         for _, instance in itinerary.instance_list():
@@ -486,6 +688,7 @@ class WsgiServer:
         :param request: Объект запроса
         :return:
         """
+        err, mapped_call = self._prepare_error(err, request=request)
         payload = normalize_problem_payload(err, request=request, include_trace=self.debug)
         status = payload.get("status", 500)
         title = payload.get("title")
@@ -532,10 +735,13 @@ class WsgiServer:
         # traceback.print_exc(file=sys.stdout)
         # call = routes.get_current_error_handler(resp)
 
-        for _, instance in itinerary.instance_list():
-            call = instance.get_current_error_handler(response)
-            if call:
-                response.body = call['handler'](response, request)
-                break
+        if mapped_call:
+            response.body = mapped_call['handler'](response, request)
+        else:
+            for _, instance in itinerary.instance_list():
+                call = instance.get_current_error_handler(response)
+                if call:
+                    response.body = call['handler'](response, request)
+                    break
 
         return self.__transport.make_response(response)
