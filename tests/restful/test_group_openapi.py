@@ -26,6 +26,31 @@ def test_group_metadata_is_dumped_to_openapi():
     assert schema["components"]["securitySchemes"]["Bearer"]["scheme"] == "bearer"
 
 
+def test_group_auth_can_be_disabled_per_endpoint():
+    api = RestApi(name="GroupAuthOverrideWsgi", prefix="/api")
+    group = api.group(
+        "/protected",
+        tags=["Protected"],
+        security=["ApiKey"],
+        response={401: JsonResponseBody(description="Unauthorized")},
+    )
+
+    @group.init("/login", method="POST", auth=False, summary="Login")
+    def login(request):
+        return {"token": "issued"}
+
+    @group.init("/diagnostics", method="GET", summary="Diagnostics")
+    def diagnostics(request):
+        return {"ok": True}
+
+    schema = api.swagger.dump()
+    login_operation = schema["paths"]["/api/protected/login"]["post"]
+    diagnostics_operation = schema["paths"]["/api/protected/diagnostics"]["get"]
+
+    assert "security" not in login_operation
+    assert diagnostics_operation["security"] == [{"ApiKey": []}]
+
+
 def test_controller_accepts_stateful_flag_like_asgi():
     api = RestApi(name="StatefulControllerWsgi", prefix="/api")
 
