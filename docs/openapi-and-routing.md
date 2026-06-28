@@ -64,6 +64,17 @@ def show(request, id):
 The generated operation is emitted as `get`, includes `tags`, `security` and
 common responses, and registers the bearer scheme in OpenAPI components.
 
+Endpoint metadata can override inherited auth:
+
+```python
+@documents.init("/login", method="POST", auth=False)
+def login(request):
+    return {"token": "issued-token"}
+```
+
+`auth=False` clears inherited security for that operation and tells the WSGI
+pipeline to skip matching auth guards.
+
 ## Performance Notes
 
 Route registration should happen during application startup/imports. Repeated
