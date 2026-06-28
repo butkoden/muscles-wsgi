@@ -8,6 +8,7 @@ from muscles import PathParameter
 from muscles import JsonRequestBody
 from muscles.wsgi.wsgi import WsgiStrategy
 from muscles.wsgi.restful import RestApi
+from muscles.wsgi.wsgi.request import RequestMaker
 from muscles import Context
 from muscles import ApplicationMeta
 from muscles import Configurator
@@ -101,6 +102,29 @@ class Muscular(metaclass=ApplicationMeta):
 
 
 muscular = Muscular()
+
+
+def test_request_maker_normalizes_path_and_keeps_query_string():
+    environ = {
+        "REQUEST_METHOD": "GET",
+        "REQUEST_URI": "//api//documents//?page=1",
+        "PATH_INFO": "//api//documents//",
+        "QUERY_STRING": "page=1",
+        "SERVER_PROTOCOL": "HTTP/1.1",
+        "wsgi.url_scheme": "http",
+        "HTTP_HOST": "example.test",
+        "SERVER_NAME": "example.test",
+        "SERVER_PORT": "80",
+        "REMOTE_ADDR": "127.0.0.1",
+        "REMOTE_PORT": "1234",
+        "wsgi.input": io.BytesIO(b""),
+        "CONTENT_LENGTH": "0",
+    }
+
+    request = RequestMaker(environ).make()
+
+    assert request.path == "/api/documents"
+    assert request.query == {"page": "1"}
 
 
 @muscular.api1.controller('/test_request',
