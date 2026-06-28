@@ -1,6 +1,7 @@
 from muscles import HtmlResponse as CoreHtmlResponse
 from muscles import BaseResponse as CoreBaseResponse
 from muscles import JsonResponse as CoreJsonResponse
+from muscles import NoContentResponse as CoreNoContentResponse
 from muscles.wsgi.wsgi.response import BaseResponse as WsgiBaseResponse
 from muscles.wsgi.wsgi.server import WsgiServer
 
@@ -19,6 +20,15 @@ def test_wsgi_server_accepts_core_html_response():
     assert isinstance(response, WsgiBaseResponse)
     assert response.status == "200"
     assert response.make_body() == b"<h1>ok</h1>"
+
+
+def test_wsgi_server_accepts_core_no_content_response_without_body():
+    server = WsgiServer(host="localhost", port=0, error_handler=Exception)
+    response = server._to_protocol_response(CoreNoContentResponse())
+
+    assert isinstance(response, WsgiBaseResponse)
+    assert response.status == "204"
+    assert response.make_body() == b""
 
 
 def test_wsgi_server_keeps_legacy_protocol_response():
