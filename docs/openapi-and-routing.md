@@ -40,6 +40,30 @@ The OpenAPI builder exports external paths, not only internal action paths:
 
 This keeps Swagger UI curl examples aligned with the real application URL.
 
+## Route Groups
+
+`RestApi.group()` registers routes with a shared prefix and inherited OpenAPI
+metadata:
+
+```python
+from muscles import BearerAuthSecurity, JsonResponseBody
+
+documents = api.group(
+    "/documents",
+    tags=["Documents"],
+    security=[BearerAuthSecurity()],
+    response={401: JsonResponseBody(description="Unauthorized")},
+)
+
+
+@documents.init("/{id}", method="GET", summary="Show document")
+def show(request, id):
+    return {"id": id}
+```
+
+The generated operation is emitted as `get`, includes `tags`, `security` and
+common responses, and registers the bearer scheme in OpenAPI components.
+
 ## Performance Notes
 
 Route registration should happen during application startup/imports. Repeated

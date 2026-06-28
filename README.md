@@ -41,6 +41,8 @@ action is registered as `/bookings` under prefix `/api/v1`, the schema exposes
 `/api/v1/bookings`.
 
 More detail: [docs/openapi-and-routing.md](docs/openapi-and-routing.md).
+Backend pipeline features are documented in
+[docs/backend-pipeline.md](docs/backend-pipeline.md).
 
 ## Request Handling
 
