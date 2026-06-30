@@ -2,12 +2,11 @@ import os
 import io
 import traceback
 import logging
-import inspect
-from dataclasses import is_dataclass
 
 from muscles.core import NotFoundException, ApplicationException, ErrorException
 from muscles.core import AttributeErrorException
-from muscles.core import Dependency, inject, EventsStorageInterface
+from muscles.core import inject, EventsStorageInterface
+from muscles.core import BackendPipeline
 from muscles.core import BaseResponse as CoreBaseResponse
 from muscles.core import normalize_problem_payload
 from .request import RequestMaker
@@ -260,6 +259,7 @@ class WsgiServer:
         self.logger = logger or logging.getLogger("muscles.wsgi")
         self.debug = debug
         self._route_cache = {}
+        self._backend_pipeline = BackendPipeline()
 
         self.__transport = self.__transport_class()
         self.__transport.init_server(self)
@@ -507,97 +507,22 @@ class WsgiServer:
         return None
 
     def _header_lookup(self, headers, name):
-        wanted = name.replace("_", "-").lower()
-        for key, value in (headers or {}).items():
-            if key.replace("_", "-").lower() == wanted:
-                return value
-        return None
+        return self._backend_pipeline.header_lookup(headers, name)
 
     def _coerce_value(self, annotation, value):
-        if annotation is inspect._empty or value is None:
-            return value
-        try:
-            if annotation in (str, int, float, bool):
-                return annotation(value)
-        except Exception as exc:
-            raise ApplicationException(status=422, reason=f"Invalid value for {annotation}", body=str(exc))
-        return value
+        return self._backend_pipeline.coerce_value(annotation, value)
 
     def _coerce_body(self, annotation, payload):
-        if annotation is inspect._empty:
-            return payload
-        if annotation in (dict, list, str, int, float, bool):
-            return payload
-        try:
-            if hasattr(annotation, "model_validate"):
-                return annotation.model_validate(payload)
-            if hasattr(annotation, "parse_obj"):
-                return annotation.parse_obj(payload)
-            if is_dataclass(annotation):
-                return annotation(**(payload or {}))
-            if inspect.isclass(annotation) and isinstance(payload, dict):
-                return annotation(**payload)
-        except Exception as exc:
-            raise ApplicationException(status=422, reason="Request body validation failed", body=str(exc))
-        return payload
+        return self._backend_pipeline.coerce_body(annotation, payload)
 
     def _resolve_dependency(self, annotation):
-        if annotation is inspect._empty:
-            return None
-        try:
-            return Dependency.resolve(annotation)
-        except Exception:
-            return None
+        return self._backend_pipeline.resolve_dependency(annotation)
 
     def _build_handler_kwargs(self, handler, request, dictionary):
-        signature = inspect.signature(handler)
-        kwargs = {}
-        for name, param in signature.parameters.items():
-            if name == "self":
-                continue
-            if name == "request":
-                kwargs[name] = request
-                continue
-            if name in dictionary:
-                kwargs[name] = self._coerce_value(param.annotation, dictionary[name])
-                continue
-
-            dependency = self._resolve_dependency(param.annotation)
-            if dependency is not None:
-                kwargs[name] = dependency
-                continue
-
-            if name == "body":
-                kwargs[name] = self._coerce_body(param.annotation, getattr(request, "json", None))
-                continue
-
-            query = getattr(request, "query", {}) or {}
-            if name in query:
-                kwargs[name] = self._coerce_value(param.annotation, query[name])
-                continue
-
-            header_value = self._header_lookup(getattr(request, "headers", {}) or {}, name)
-            if header_value is not None:
-                kwargs[name] = self._coerce_value(param.annotation, header_value)
-                continue
-
-            cookies = getattr(request, "cookies", {}) or {}
-            if name in cookies:
-                kwargs[name] = self._coerce_value(param.annotation, cookies[name])
-                continue
-
-            if param.default is inspect._empty:
-                raise ApplicationException(status=422, reason=f"Missing required handler argument `{name}`")
-        return kwargs
+        return self._backend_pipeline.build_handler_kwargs(handler, request, dictionary)
 
     def _run_guards(self, request):
-        if not getattr(request, "itinerary", None) or not hasattr(request.itinerary, "get_guards"):
-            return None
-        for guard in request.itinerary.get_guards(request):
-            response = guard(request)
-            if response is not None:
-                return response
-        return None
+        return self._backend_pipeline.run_guards(request)
 
     def _has_exception_mapping(self, error, request):
         current_itinerary = getattr(request, "itinerary", None)
@@ -617,42 +542,13 @@ class WsgiServer:
         return err, None
 
     def _run_security(self, request):
-        is_auth_disabled = getattr(getattr(request, "itinerary", None), "is_auth_disabled", None)
-        if is_auth_disabled and is_auth_disabled(request.route):
-            return
-        handler = request.route["handler"]
-        for security in getattr(handler, "security", []) or []:
-            if not hasattr(security, "authenticate_header"):
-                continue
-            result = security.authenticate_header(self._header_lookup(request.headers, "Authorization"))
-            if result is None:
-                raise ApplicationException(status=401, reason="Unauthorized")
-            request.actor = result.get("user")
+        return self._backend_pipeline.run_security(request)
 
     def _call_route_handler(self, request, dictionary):
-        middlewares = []
-        if getattr(request, "itinerary", None) and hasattr(request.itinerary, "get_middlewares"):
-            middlewares = request.itinerary.get_middlewares()
-
-        def call_next(req):
-            return self._call_handler(req, dictionary)
-
-        next_call = call_next
-        for middleware in reversed(middlewares):
-            current_next = next_call
-
-            def wrapped(req, middleware=middleware, current_next=current_next):
-                return middleware(req, current_next)
-
-            next_call = wrapped
-        return next_call(request)
+        return self._backend_pipeline.call_route_handler(request, dictionary)
 
     def _call_handler(self, request, dictionary):
-        handler = request.route['handler']
-        kwargs = self._build_handler_kwargs(handler, request, dictionary)
-        if hasattr(handler, 'controller'):
-            return handler(handler.controller(), **kwargs)
-        return handler(**kwargs)
+        return self._backend_pipeline.call_handler(request, dictionary)
 
     def _has_matching_path(self, path: str) -> bool:
         for instance in self._runtime_instances():
