@@ -80,6 +80,37 @@ def login(request):
 `auth=False` clears inherited security for that operation and tells the WSGI
 pipeline to skip matching auth guards.
 
+## Route Key Rule (Important)
+
+`@routes.init(...)` / `api.init(...)` binds handlers by route `path + key + method`.
+
+Endpoints that share the same `path` may keep one shared `key`, or use distinct
+keys per HTTP method when operation names must differ.
+
+```python
+@api.init("/api/documents", key="documents.collection", method="GET", summary="List")
+def list_documents(request):
+    ...
+
+
+@api.init("/api/documents", key="documents.collection", method="POST", summary="Create")
+def create_document(request):
+    ...
+
+
+@api.init("/api/documents", key="documents.list", method="GET", summary="List V2")
+def list_documents_v2(request):
+    ...
+
+
+@api.init("/api/documents", key="documents.create", method="POST", summary="Create V2")
+def create_document_v2(request):
+    ...
+```
+
+Core route lookup keeps all route records on the matched terminal node and then
+filters by method and content type.
+
 ## Performance Notes
 
 Route registration should happen during application startup/imports. Repeated
