@@ -38,6 +38,16 @@ class App(metaclass=ApplicationMeta):
 standard WSGI environment keys such as `PATH_INFO`, `QUERY_STRING` and
 `wsgi.url_scheme`.
 
+## Schema Ownership
+
+WSGI does not ship its own `muscles.wsgi.schema_` package. Framework schemas,
+columns, fields, request/response bodies, security objects and value objects
+belong to `muscles.core.schema` and should be imported from `muscles`:
+
+```python
+from muscles import Column, JsonRequestBody, Model, String
+```
+
 ## ASGI/WSGI Parity
 
 WSGI mirrors the ASGI developer-facing API. An application should be able to
