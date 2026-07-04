@@ -1,7 +1,10 @@
+from typing import Any
+
 from .schema import Schema
 
 
 class BaseParameter(Schema):
+    param_type: Any
 
     def __init__(self, name, param_type, *args, required=False, description=None, explode=False, model=None, **kwargs):
         kwargs["required"] = required

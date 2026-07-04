@@ -3,6 +3,7 @@ from watchdog.observers import Observer
 from watchdog.events import RegexMatchingEventHandler
 from watchdog.events import PatternMatchingEventHandler
 import importlib
+import importlib.util
 
 
 class PatternMatchingHandler(PatternMatchingEventHandler):
@@ -25,7 +26,10 @@ class PatternMatchingHandler(PatternMatchingEventHandler):
             package = importlib.import_module(package, package=None)
             if hasattr(package, handler):
                 handler = getattr(package, handler)
-                command = handler(**self._command.get('config', {}))
+                handler_config = self._command.get('config') or {}
+                if not isinstance(handler_config, dict):
+                    handler_config = {}
+                command = handler(**handler_config)
                 res = command.execute()
                 if res:
                     print("Reload uwsgi")
@@ -107,7 +111,10 @@ class Watchdog:
             print('-----------package, handler>', package, handler)
             if hasattr(package, handler):
                 handler = getattr(package, handler)
-                event_handler = handler(**config.get('config'))
+                handler_config = config.get('config') or {}
+                if not isinstance(handler_config, dict):
+                    handler_config = {}
+                event_handler = handler(**handler_config)
                 self.observer.schedule(event_handler, path=str(config.get('path')), recursive=True)
                 self.observer.start()
                 # self.observer.join()

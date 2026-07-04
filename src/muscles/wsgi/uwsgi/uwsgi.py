@@ -1,4 +1,7 @@
 
+import importlib
+from typing import Any, cast
+
 
 class UwsgiReload:
     """
@@ -10,5 +13,5 @@ class UwsgiReload:
 
     def execute(self):
         print('Reloaded UWSGI')
-        import uwsgi
+        uwsgi = cast(Any, importlib.import_module("uwsgi"))
         return uwsgi.reload()
