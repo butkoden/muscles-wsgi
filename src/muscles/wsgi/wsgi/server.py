@@ -2,14 +2,15 @@ import os
 import io
 import traceback
 import logging
+from typing import Any, cast
 
 from muscles.core import NotFoundException, ApplicationException, ErrorException
 from muscles.core import AttributeErrorException
-from muscles.core import inject, EventsStorageInterface
+from muscles.core import Dependency, inject, EventsStorageInterface
 from muscles.core import BackendPipeline
 from muscles.core import BaseResponse as CoreBaseResponse
 from muscles.core import normalize_problem_payload
-from .request import RequestMaker
+from .request import Request, RequestMaker
 from .response import MakeResponse, BaseResponse
 from .routers import routes, itinerary
 from urllib.parse import unquote
@@ -25,7 +26,7 @@ class Transport:
     Транспорт протокола стратегии
     """
 
-    server = None
+    server: Any = None
 
     def __init__(self):
         pass
@@ -33,11 +34,17 @@ class Transport:
     def init_server(self, server):
         self.server = server
 
-    def make_response(self, response):
-        pass
+    def execute(self, *args, **kwargs) -> Any:
+        return None
 
-    def make_request(self):
-        pass
+    def make_response(self, response) -> Any:
+        return None
+
+    def make_request(self, *args, **kwargs) -> Any:
+        return None
+
+    def send_header(self, http_status, headers) -> None:
+        return None
 
 
 class WsgiTransport(Transport):
@@ -68,22 +75,28 @@ class WsgiTransport(Transport):
         request = self.make_request(environ)
         if request is None:
             raise ApplicationException(status=400, reason='Bad request', body='Malformed request line')
-        return self.server.handler(request)
+        server = self.server
+        if server is None:
+            raise ApplicationException(status=500, reason='Server is not initialized')
+        return server.handler(request)
 
-    def make_response(self, response: BaseResponse):
+    def make_response(self, response: BaseResponse) -> Any:
         """
         Отправляем ответ
         :param response: объект ответа
         :return:
         """
+        server = self.server
+        if server is None:
+            raise ApplicationException(status=500, reason='Server is not initialized')
         try:
-            response = MakeResponse(response=response)
-            self.server.logger.debug("WSGI response status=%s", response.http_status)
-            self.send_header(response.http_status, response.headers)
-            body = response.body if isinstance(response.body, list) else [response.body]
+            made_response = MakeResponse(response=response)
+            server.logger.debug("WSGI response status=%s", made_response.http_status)
+            self.send_header(made_response.http_status, made_response.headers)
+            body = made_response.body if isinstance(made_response.body, list) else [made_response.body]
             return body
         except Exception as ae:
-            self.server.logger.exception("WSGI transport response error")
+            server.logger.exception("WSGI transport response error")
             raise ApplicationException(status=500, reason=ae, body=traceback.format_exc())
 
     def send_header(self, http_status, headers):
@@ -95,21 +108,24 @@ class WsgiTransport(Transport):
         """
         self.start_response(http_status, headers)
 
-    def make_request(self, environ):
+    def make_request(self, environ) -> Request:
         """
         Формируем обхект запроса на основании переменных запроса
         :param environ: Переменные запроса
         :return: Request
         """
+        server = self.server
+        if server is None:
+            raise ApplicationException(status=500, reason='Server is not initialized')
         try:
             requestMaker = RequestMaker(environ)
             request = requestMaker.make()
             return request
         except ApplicationException as ae:
-            self.server.logger.exception("WSGI request maker error")
+            server.logger.exception("WSGI request maker error")
             raise ApplicationException(status=500, reason=ae, body=traceback.format_exc())
         except Exception as ae:
-            self.server.logger.exception("WSGI request build error")
+            server.logger.exception("WSGI request build error")
             raise ApplicationException(status=500, reason=ae, body=traceback.format_exc())
 
 
@@ -247,8 +263,8 @@ class WsgiServer:
     Объект сервера WSGI
     """
 
-    __transport_class = WsgiTransport
-    __transport = WsgiTransport
+    __transport_class: type[Transport] = WsgiTransport
+    __transport: Transport
     __host = 'localhost'
     __port = 80
 
@@ -339,7 +355,8 @@ class WsgiServer:
             if len(response) >= 3:
                 kwargs["headers"] = response[2]
             return BaseResponse(status=status, request=request, **kwargs)
-        return BaseResponse(status=200, body=response, request=request)
+        body = str(response) if isinstance(response, BaseException) else response
+        return BaseResponse(status=200, body=body, request=request)
 
     def handler(self, request):
         """
@@ -392,15 +409,16 @@ class WsgiServer:
                 func(request)
         return dictionary
 
-    @inject(EventsStorageInterface)
-    def handle_request(self, request, evnetStorage: EventsStorageInterface):
+    @inject(progressive=False)
+    def handle_request(self, request, evnetStorage=Dependency(EventsStorageInterface)):
         """
         Обработчик запроса к серверу
         :param request: Объект запроса
         :return:
         """
+        events = cast(Any, evnetStorage)
         try:
-            before_request = evnetStorage.get('before_request')
+            before_request = events.get('before_request')
             cors_response = self._cors_preflight_response(request)
             if cors_response is not None:
                 return self.__transport.make_response(self._to_protocol_response(cors_response, request=request))
@@ -451,7 +469,7 @@ class WsgiServer:
                     for header in resp.headers:
                         headers.append('%s: %s' % (header[0], header[1]))
 
-                    before_response = evnetStorage.get('before_response')
+                    before_response = events.get('before_response')
                     if before_response:
                         for handler in before_response:
                             resp = handler(resp)
@@ -600,7 +618,8 @@ class WsgiServer:
             self.logger.debug("%s", "\n".join(trace) if isinstance(trace, list) else trace)
 
         if issubclass(self.__error_handler, Exception):
-            resp = self.__error_handler().handler(
+            error_handler = cast(Any, self.__error_handler)
+            resp = error_handler().handler(
                 status=status,
                 reason=title,
                 body=payload,

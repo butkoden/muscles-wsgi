@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from typing import Any, cast
+
 from muscles import ApplicationMeta, Configurator, Context
 from .wsgi import WsgiStrategy
 
@@ -31,7 +33,7 @@ class MuscularWsgiApp(metaclass=ApplicationMeta):
         }
     )
 
-    wsgi = Context(WsgiStrategy, params={})
+    wsgi = Context(cast(Any, WsgiStrategy), params={})
 
     def run(self, *args, **kwargs):
         return self.wsgi.execute(*args, **kwargs, shutup=self.shutup)

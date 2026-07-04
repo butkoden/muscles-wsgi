@@ -1,9 +1,12 @@
+from typing import Any
+
 from .schema import Schema
 from .model import BaseModel
 from .collection import Collection
 
 
 class RequestBody(Schema):
+    model: Any
 
     def __init__(self, *args, content_type=None, description=None, model=None,
                  is_list=False, min_items=0, max_items=0, unique_items=False, **kwargs):
@@ -20,7 +23,7 @@ class RequestBody(Schema):
         self.is_list = is_list
         self.content_type = content_type
         self.description = description
-        self.model = model
+        self.model: Any = model
         self.is_list = is_list
         self.min_items = min_items
         self.max_items = max_items
@@ -32,14 +35,7 @@ class RequestBody(Schema):
             results.append(child.dump())
         if self.is_list:
             if self.model and (isinstance(self.model, BaseModel) or isinstance(self.model, Collection)):
-                if self.model and (isinstance(self.model, BaseModel) or isinstance(self.model, Collection)):
-                    schema = {"$ref": "#/components/schemas/%s" % self.model.__class__.__name__}
-                elif self.model and isinstance(self.model, list):
-                    schema = {"oneOf": []}
-                    for _model in self.model:
-                        schema['oneOf'].append({"$ref": "#/components/schemas/%s" % _model.__class__.__name__})
-                else:
-                    schema = self.model.dump() if hasattr(self, 'model') and hasattr(self.model, 'dump') else None
+                schema = {"$ref": "#/components/schemas/%s" % self.model.__class__.__name__}
             else:
                 schema = self.model.dump() if hasattr(self, 'model') and hasattr(self.model, 'dump') else None
             model = {

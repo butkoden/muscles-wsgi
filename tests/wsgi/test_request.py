@@ -127,6 +127,30 @@ def test_request_maker_normalizes_path_and_keeps_query_string():
     assert request.query == {"page": "1"}
 
 
+def test_request_url_helpers_include_scheme_host_port_and_path():
+    environ = {
+        "REQUEST_METHOD": "GET",
+        "REQUEST_URI": "/api/documents?debug=1",
+        "PATH_INFO": "/api/documents",
+        "QUERY_STRING": "debug=1",
+        "SERVER_PROTOCOL": "HTTP/1.1",
+        "wsgi.url_scheme": "https",
+        "HTTP_HOST": "example.test:8443",
+        "SERVER_NAME": "example.test",
+        "SERVER_PORT": "8443",
+        "REMOTE_ADDR": "127.0.0.1",
+        "REMOTE_PORT": "1234",
+        "wsgi.input": io.BytesIO(b""),
+        "CONTENT_LENGTH": "0",
+    }
+
+    request = RequestMaker(environ).make()
+
+    assert request.base_url == "https://example.test:8443/api/documents"
+    assert request.host_url == "https://example.test:8443"
+    assert request.host == "https://example.test:8443"
+
+
 @muscular.api1.controller('/test_request',
                           description='Контроллер работы со списком пользователей и пользователями',
                           summary='РО'
