@@ -9,6 +9,14 @@ UI on top of the shared `muscles` core.
 Canonical ecosystem install matrix is documented in core:
 [Muscles installation matrix](https://github.com/butkoden/muscles/blob/master/docs/installation.md).
 
+## Related Repositories
+
+- [`muscles`](https://github.com/butkoden/muscles) - core contracts, routing, actions and canonical documentation.
+- [`muscles-asgi`](https://github.com/butkoden/muscles-asgi) - ASGI runtime with the same application model.
+- [`muscles-cli`](https://github.com/butkoden/muscles-cli) - CLI projection and developer commands.
+- [`muscles-mcp`](https://github.com/butkoden/muscles-mcp) - MCP projection that can also expose WSGI/CLI adapters.
+- [`muscles-benchmarks`](https://github.com/butkoden/muscles-benchmarks) - WSGI regression and architecture checks.
+
 ## Runtime
 
 An app binds `Context` to `WsgiStrategy`:
