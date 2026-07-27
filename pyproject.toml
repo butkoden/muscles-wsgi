@@ -7,9 +7,22 @@ build-backend = "poetry.core.masonry.api"
 name = "muscles-wsgi"
 version = "1.0.0"
 description = "Muscles WSGI runtime adapter for Web/API applications"
+readme = "README.md"
 authors = ["Denis B. <denis@butko.info>"]
 license = "MIT"
 packages = [{include = "muscles", from = "src"}]
+
+[tool.poetry.urls]
+Homepage = "https://github.com/butkoden/muscles-wsgi"
+Repository = "https://github.com/butkoden/muscles-wsgi"
+Documentation = "https://github.com/butkoden/muscles-wsgi#readme"
+PyPI = "https://pypi.org/project/muscles-wsgi/"
+Releases = "https://github.com/butkoden/muscles-wsgi/releases"
+"muscles" = "https://pypi.org/project/muscles/"
+"muscles-asgi" = "https://pypi.org/project/muscles-asgi/"
+"muscles-cli" = "https://pypi.org/project/muscles-cli/"
+"muscles-mcp" = "https://pypi.org/project/muscles-mcp/"
+"muscles-benchmarks" = "https://pypi.org/project/muscles-benchmarks/"
 
 
 [tool.poetry.dependencies]
