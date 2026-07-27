@@ -6,6 +6,10 @@ UI on top of the shared `muscles` core.
 
 ## Installation
 
+```bash
+pip install muscles-wsgi
+```
+
 Canonical ecosystem install matrix is documented in core:
 [Muscles installation matrix](https://github.com/butkoden/muscles/blob/master/docs/installation.md).
 
