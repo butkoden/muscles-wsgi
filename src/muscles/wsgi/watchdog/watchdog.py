@@ -1,7 +1,6 @@
 import logging
-from muscles.wsgi.watchdog.watchdog import Observer
-from muscles.wsgi.watchdog.watchdog import RegexMatchingEventHandler
-from muscles.wsgi.watchdog.watchdog import PatternMatchingEventHandler
+from watchdog.events import PatternMatchingEventHandler, RegexMatchingEventHandler
+from watchdog.observers import Observer
 import importlib
 import importlib.util
 
