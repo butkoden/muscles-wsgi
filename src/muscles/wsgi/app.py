@@ -39,7 +39,7 @@ class MuscularWsgiApp(metaclass=ApplicationMeta):
         return self.wsgi.execute(*args, **kwargs, shutup=self.shutup)
 
 
-def wsgi_app(app: MuscularWsgiApp, context: str | Context | None = None):
+def wsgi_app(app: ApplicationMeta, context: str | Context | None = None):
     def _resolve_context():
         if isinstance(context, Context):
             return context

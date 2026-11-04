@@ -1,5 +1,5 @@
 import hashlib
-from ..wsgi.routers import routes
+from muscles.wsgi.wsgi.routers import routes
 import os
 import muscles.core
 

@@ -11,8 +11,8 @@ from muscles.core import BackendPipeline
 from muscles.core import BaseResponse as CoreBaseResponse
 from muscles.core import normalize_problem_payload
 from .request import Request, RequestMaker
-from .response import MakeResponse, BaseResponse
-from .routers import routes, itinerary
+from muscles.wsgi.wsgi.response import MakeResponse, BaseResponse
+from muscles.wsgi.wsgi.routers import routes, itinerary
 from urllib.parse import unquote
 
 MAX_LINE = 64 * 1024

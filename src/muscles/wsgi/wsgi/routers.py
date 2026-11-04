@@ -5,13 +5,11 @@ import os
 from abc import ABC
 from typing import Any
 from urllib.parse import unquote
-from .response import Response
 from muscles.core import Schema
 from muscles.core import BaseSecurity
 from muscles.core import GuestUser
 from muscles.core import Itinerary as CoreItinerary
 from muscles.core.schema.itinerary import Node as CoreNode
-from .error_handler import ForbiddenException
 
 
 class RouteRule(ABC):

@@ -5,7 +5,7 @@ from json import JSONEncoder
 from typing import Optional, Union
 
 from .request import Request
-from ..__about__ import __version__, __name__
+from muscles.wsgi.__about__ import __version__, __name__
 import mimetypes
 from muscles.core import BaseModel, Collection
 from .http_code import code_status
